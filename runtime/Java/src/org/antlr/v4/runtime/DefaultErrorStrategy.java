@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2016 The ANTLR Project. All rights reserved.
+ * Copyright (c) 2012-2017 The ANTLR Project. All rights reserved.
  * Use of this file is governed by the BSD 3-clause license that
  * can be found in the LICENSE.txt file in the project root.
  */
@@ -35,6 +35,21 @@ public class DefaultErrorStrategy implements ANTLRErrorStrategy {
 	protected int lastErrorIndex = -1;
 
 	protected IntervalSet lastErrorStates;
+
+	/**
+	 * This field is used to propagate information about the lookahead following
+	 * the previous match. Since prediction prefers completing the current rule
+	 * to error recovery efforts, error reporting may occur later than the
+	 * original point where it was discoverable. The original context is used to
+	 * compute the true expected sets as though the reporting occurred as early
+	 * as possible.
+	 */
+	protected ParserRuleContext nextTokensContext;
+
+	/**
+	 * @see #nextTokensContext
+	 */
+	protected int nextTokensState;
 
 	/**
 	 * {@inheritDoc}
@@ -224,10 +239,21 @@ public class DefaultErrorStrategy implements ANTLRErrorStrategy {
         int la = tokens.LA(1);
 
         // try cheaper subset first; might get lucky. seems to shave a wee bit off
-        if ( recognizer.getATN().nextTokens(s).contains(la) || la==Token.EOF ) return;
+		IntervalSet nextTokens = recognizer.getATN().nextTokens(s);
+		if (nextTokens.contains(la)) {
+			// We are sure the token matches
+			nextTokensContext = null;
+			nextTokensState = ATNState.INVALID_STATE_NUMBER;
+			return;
+		}
 
-		// Return but don't end recovery. only do that upon valid token match
-		if (recognizer.isExpectedToken(la)) {
+		if (nextTokens.contains(Token.EPSILON)) {
+			if (nextTokensContext == null) {
+				// It's possible the next token won't match; information tracked
+				// by sync is restricted for performance.
+				nextTokensContext = recognizer.getContext();
+				nextTokensState = recognizer.getState();
+			}
 			return;
 		}
 
@@ -452,7 +478,14 @@ public class DefaultErrorStrategy implements ANTLRErrorStrategy {
 		}
 
 		// even that didn't work; must throw the exception
-		throw new InputMismatchException(recognizer);
+		InputMismatchException e;
+		if (nextTokensContext == null) {
+			e = new InputMismatchException(recognizer);
+		} else {
+			e = new InputMismatchException(recognizer, nextTokensState, nextTokensContext);
+		}
+
+		throw e;
 	}
 
 	/**
@@ -550,7 +583,10 @@ public class DefaultErrorStrategy implements ANTLRErrorStrategy {
 	protected Token getMissingSymbol(Parser recognizer) {
 		Token currentSymbol = recognizer.getCurrentToken();
 		IntervalSet expecting = getExpectedTokens(recognizer);
-		int expectedTokenType = expecting.getMinElement(); // get any element
+		int expectedTokenType = Token.INVALID_TYPE;
+		if ( !expecting.isNil() ) {
+			expectedTokenType = expecting.getMinElement(); // get any element
+		}
 		String tokenText;
 		if ( expectedTokenType== Token.EOF ) tokenText = "<missing EOF>";
 		else tokenText = "<missing "+recognizer.getVocabulary().getDisplayName(expectedTokenType)+">";

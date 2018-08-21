@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2016 The ANTLR Project. All rights reserved.
+ * Copyright (c) 2012-2017 The ANTLR Project. All rights reserved.
  * Use of this file is governed by the BSD 3-clause license that
  * can be found in the LICENSE.txt file in the project root.
  */
@@ -8,6 +8,7 @@ package org.antlr.v4.codegen.target;
 
 import org.antlr.v4.codegen.CodeGenerator;
 import org.antlr.v4.codegen.Target;
+import org.antlr.v4.codegen.UnicodeEscapes;
 import org.antlr.v4.tool.ast.GrammarAST;
 import org.stringtemplate.v4.STGroup;
 import org.stringtemplate.v4.StringRenderer;
@@ -23,26 +24,27 @@ import java.util.Set;
  */
 public class Python3Target extends Target {
 	protected static final String[] python3Keywords = {
-		"abs", "all", "any", "apply", "as",
-		"bin", "bool", "buffer", "bytearray",
-		"callable", "chr", "classmethod", "coerce", "compile", "complex",
-		"del", "delattr", "dict", "dir", "divmod",
-		"enumerate", "eval", "execfile",
-		"file", "filter", "float", "format", "frozenset",
-		"getattr", "globals",
+		"abs", "all", "and", "any", "apply", "as", "assert",
+		"bin", "bool", "break", "buffer", "bytearray",
+		"callable", "chr", "class", "classmethod", "coerce", "compile", "complex", "continue",
+		"def", "del", "delattr", "dict", "dir", "divmod",
+		"elif", "else", "enumerate", "eval", "execfile", "except",
+		"file", "filter", "finally", "float", "for", "format", "from", "frozenset",
+		"getattr", "global", "globals",
 		"hasattr", "hash", "help", "hex",
-		"id", "input", "int", "intern", "isinstance", "issubclass", "iter",
-		"len", "list", "locals",
-		"map", "max", "min", "next",
-		"memoryview",
-		"object", "oct", "open", "ord",
-		"pow", "print", "property",
-		"range", "raw_input", "reduce", "reload", "repr", "return", "reversed", "round",
+		"id", "if", "import", "in", "input", "int", "intern", "is", "isinstance", "issubclass", "iter",
+		"lambda", "len", "list", "locals",
+		"map", "max", "min", "memoryview",
+		"next", "nonlocal", "not",
+		"object", "oct", "open", "or", "ord",
+		"pass", "pow", "print", "property",
+		"raise", "range", "raw_input", "reduce", "reload", "repr", "return", "reversed", "round",
 		"set", "setattr", "slice", "sorted", "staticmethod", "str", "sum", "super",
-		"tuple", "type",
+		"try", "tuple", "type",
 		"unichr", "unicode",
 		"vars",
-		"with",
+		"with", "while",
+		"yield",
 		"zip",
 		"__import__",
 		"True", "False", "None"
@@ -55,7 +57,7 @@ public class Python3Target extends Target {
 	@Override
 	public int getSerializedATNSegmentLimit() {
 		// set to something stupid to avoid segmentation
-		return 2 ^ 31;
+		return Integer.MAX_VALUE;
 	}
 
 	@Override
@@ -95,7 +97,7 @@ public class Python3Target extends Target {
 
 	@Override
 	public String getVersion() {
-		return "4.6";
+		return "4.7.1";
 	}
 
 	/** Avoid grammar symbols in this set to prevent conflicts in gen'd code. */
@@ -115,5 +117,8 @@ public class Python3Target extends Target {
 		badWords.add("parserRule");
 	}
 
-
+	@Override
+	protected void appendUnicodeEscapedCodePoint(int codePoint, StringBuilder sb) {
+		UnicodeEscapes.appendPythonStyleEscapedCodePoint(codePoint, sb);
+	}
 }

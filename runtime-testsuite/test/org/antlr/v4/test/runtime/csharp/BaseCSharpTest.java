@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2016 The ANTLR Project. All rights reserved.
+ * Copyright (c) 2012-2017 The ANTLR Project. All rights reserved.
  * Use of this file is governed by the BSD 3-clause license that
  * can be found in the LICENSE.txt file in the project root.
  */
@@ -13,6 +13,8 @@ import org.antlr.v4.runtime.WritableToken;
 import org.antlr.v4.runtime.misc.Utils;
 import org.antlr.v4.test.runtime.ErrorQueue;
 import org.antlr.v4.test.runtime.RuntimeTestSupport;
+import org.antlr.v4.test.runtime.StreamVacuum;
+import org.antlr.v4.test.runtime.TestOutputReading;
 import org.antlr.v4.tool.ANTLRMessage;
 import org.antlr.v4.tool.GrammarSemanticsMessage;
 import org.junit.rules.TestRule;
@@ -31,7 +33,6 @@ import javax.xml.transform.stream.StreamResult;
 import javax.xml.xpath.XPathConstants;
 import javax.xml.xpath.XPathExpression;
 import javax.xml.xpath.XPathFactory;
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -39,6 +40,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.URL;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -49,6 +51,7 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.antlr.v4.test.runtime.BaseRuntimeTest.antlrOnString;
+import static org.antlr.v4.test.runtime.BaseRuntimeTest.writeFile;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -56,6 +59,12 @@ import static org.junit.Assert.assertTrue;
 public class BaseCSharpTest implements RuntimeTestSupport /*, SpecialRuntimeTestAssert*/ {
 	public static final String newline = System.getProperty("line.separator");
 	public static final String pathSep = System.getProperty("path.separator");
+
+    /**
+     * When {@code true}, on Linux will call dotnet cli toolchain, otherwise
+     * will continue to use mono
+     */
+    public static final boolean NETSTANDARD = Boolean.parseBoolean(System.getProperty("antlr-csharp-netstandard"));
 
 	/**
 	 * When the {@code antlr.preserve-test-dir} runtime property is set to
@@ -119,19 +128,6 @@ public class BaseCSharpTest implements RuntimeTestSupport /*, SpecialRuntimeTest
 	/** Errors found while running antlr */
 	protected StringBuilder antlrToolErrors;
 
-	@org.junit.Rule
-	public final TestRule testWatcher = new TestWatcher() {
-
-		@Override
-		protected void succeeded(Description description) {
-			// remove tmpdir if no error.
-			if (!PRESERVE_TEST_DIR) {
-				eraseTempDir();
-			}
-		}
-
-	};
-
 	@Override
 	public void testSetUp() throws Exception {
 		if (CREATE_PER_TEST_DIRECTORIES) {
@@ -142,7 +138,7 @@ public class BaseCSharpTest implements RuntimeTestSupport /*, SpecialRuntimeTest
 		else {
 			tmpdir = new File(BASE_TEST_DIR).getAbsolutePath();
 			if (!PRESERVE_TEST_DIR && new File(tmpdir).exists()) {
-				eraseFiles();
+				eraseDirectory(new File(tmpdir));
 			}
 		}
 		antlrToolErrors = new StringBuilder();
@@ -240,7 +236,7 @@ public class BaseCSharpTest implements RuntimeTestSupport /*, SpecialRuntimeTest
 			return stderrDuringParse;
 		}
 		String output = execTest();
-		if ( output.length()==0 ) {
+		if ( output!=null && output.length()==0 ) {
 			output = null;
 		}
 		return output;
@@ -342,7 +338,9 @@ public class BaseCSharpTest implements RuntimeTestSupport /*, SpecialRuntimeTest
 	}
 
 	public String execRecognizer() {
-		compile();
+		boolean success = compile();
+		assertTrue(success);
+
 		String output = execTest();
 		if ( output!=null && output.length()==0 ) {
 			output = null;
@@ -351,15 +349,27 @@ public class BaseCSharpTest implements RuntimeTestSupport /*, SpecialRuntimeTest
 	}
 
 	public boolean compile() {
-		try {
-			if(!createProject())
-				return false;
-			if(!buildProject())
-				return false;
-			return true;
-		} catch(Exception e) {
-			return false;
-		}
+        if(!NETSTANDARD) {
+            try {
+                if(!createProject())
+                    return false;
+                if(!buildProject())
+                    return false;
+                return true;
+            } catch(Exception e) {
+                e.printStackTrace(System.err);
+                return false;
+            }
+        }
+        else
+        {
+            try {
+                return buildDotnetProject();
+            } catch(Exception e) {
+                e.printStackTrace(System.err);
+                return false;
+            }
+        }
 	}
 
 	private File getTestProjectFile() {
@@ -385,10 +395,15 @@ public class BaseCSharpTest implements RuntimeTestSupport /*, SpecialRuntimeTest
 		stdoutVacuum.join();
 		stderrVacuum.join();
 		// xbuild sends errors to output, so check exit code
-		boolean success = process.exitValue()==0;
+		int exitValue = process.exitValue();
+		boolean success = (exitValue == 0);
 		if ( !success ) {
 			this.stderrDuringParse = stdoutVacuum.toString();
-			System.err.println("buildProject stderrVacuum: "+ this.stderrDuringParse);
+			String stderrString = stderrVacuum.toString();
+			System.err.println("buildProject command: " + Utils.join(args, " "));
+			System.err.println("buildProject exitValue: " + exitValue);
+			System.err.println("buildProject stdout: " + stderrDuringParse);
+			System.err.println("buildProject stderr: " + stderrString);
 		}
 		return success;
 	}
@@ -405,11 +420,14 @@ public class BaseCSharpTest implements RuntimeTestSupport /*, SpecialRuntimeTest
 	}
 
 	private String locateExec() {
-		return new File(tmpdir, "bin/Release/Test.exe").getAbsolutePath();
+        if (!NETSTANDARD)
+            return new File(tmpdir, "bin/Release/Test.exe").getAbsolutePath();
+
+        return new File(tmpdir, "bin/Release/netcoreapp1.0/Test.dll").getAbsolutePath();
 	}
 
 	private String locateTool(String tool) {
-		String[] roots = { "/opt/local/bin/", "/usr/bin/", "/usr/local/bin/" };
+		String[] roots = { "/opt/local/bin/", "/usr/local/bin/", "/usr/bin/" };
 		for(String root : roots) {
 			if(new File(root + tool).exists())
 				return root + tool;
@@ -472,6 +490,104 @@ public class BaseCSharpTest implements RuntimeTestSupport /*, SpecialRuntimeTest
 		}
 	}
 
+    public boolean buildDotnetProject() {
+        try {
+            // save auxiliary files
+            String pack = BaseCSharpTest.class.getPackage().getName().replace(".", "/") + "/";
+            saveResourceAsFile(pack + "Antlr4.Test.dotnet.csproj", new File(tmpdir, "Antlr4.Test.dotnet.csproj"));
+
+            // find runtime package
+            final ClassLoader loader = Thread.currentThread().getContextClassLoader();
+            final URL runtimeProj = loader.getResource("CSharp/runtime/CSharp/Antlr4.Runtime/Antlr4.Runtime.dotnet.csproj");
+            if ( runtimeProj==null ) {
+                throw new RuntimeException("C# runtime project file not found!");
+            }
+            File runtimeProjFile = new File(runtimeProj.getFile());
+            String runtimeProjPath = runtimeProjFile.getPath();
+
+            // add Runtime project reference
+            String dotnetcli = locateTool("dotnet");
+            String[] args = new String[] {
+                dotnetcli,
+                "add",
+                "Antlr4.Test.dotnet.csproj",
+                "reference",
+                runtimeProjPath
+            };
+            boolean success = runProcess(args, tmpdir);
+            assertTrue(success);
+
+            // restore project
+            args = new String[] {
+                dotnetcli,
+                "restore",
+                "Antlr4.Test.dotnet.csproj",
+                "--no-dependencies"
+            };
+            success = runProcess(args, tmpdir);
+            assertTrue(success);
+
+            // build test
+            args = new String[] {
+                dotnetcli,
+                "build",
+                "Antlr4.Test.dotnet.csproj",
+                "-c",
+                "Release",
+                "--no-dependencies"
+            };
+            success = runProcess(args, tmpdir);
+            assertTrue(success);
+        }
+        catch(Exception e) {
+            e.printStackTrace(System.err);
+            return false;
+        }
+
+        return true;
+    }
+
+    private boolean runProcess(String[] args, String path) throws Exception {
+        return runProcess(args, path, 0);
+    }
+
+    private boolean runProcess(String[] args, String path, int retries) throws Exception {
+        ProcessBuilder pb = new ProcessBuilder(args);
+        pb.directory(new File(path));
+        Process process = pb.start();
+        StreamVacuum stdoutVacuum = new StreamVacuum(process.getInputStream());
+        StreamVacuum stderrVacuum = new StreamVacuum(process.getErrorStream());
+        stdoutVacuum.start();
+        stderrVacuum.start();
+        process.waitFor();
+        stdoutVacuum.join();
+        stderrVacuum.join();
+        int exitValue = process.exitValue();
+        boolean success = (exitValue == 0);
+        if ( !success ) {
+            this.stderrDuringParse = stderrVacuum.toString();
+            System.err.println("runProcess command: " + Utils.join(args, " "));
+            System.err.println("runProcess exitValue: " + exitValue);
+            System.err.println("runProcess stdoutVacuum: " + stdoutVacuum.toString());
+            System.err.println("runProcess stderrVacuum: " + stderrDuringParse);
+        }
+        if (exitValue == 132) {
+            // Retry after SIGILL.  We are seeing this intermittently on
+            // macOS (issue #2078).
+            if (retries < 3) {
+                System.err.println("runProcess retrying; " + retries +
+                                   " retries so far");
+                 return runProcess(args, path, retries + 1);
+            }
+            else {
+                System.err.println("runProcess giving up after " + retries +
+                                   " retries");
+                return false;
+            }
+        }
+        return success;
+    }
+
 	private void saveResourceAsFile(String resourceName, File file) throws IOException {
 		InputStream input = Thread.currentThread().getContextClassLoader().getResourceAsStream(resourceName);
 		if ( input==null ) {
@@ -488,10 +604,13 @@ public class BaseCSharpTest implements RuntimeTestSupport /*, SpecialRuntimeTest
 
 	public String execTest() {
 		String exec = locateExec();
-		String[] args = getExecTestArgs(exec);
 		try {
+			File tmpdirFile = new File(tmpdir);
+			Path output = tmpdirFile.toPath().resolve("output");
+			Path errorOutput = tmpdirFile.toPath().resolve("error-output");
+			String[] args = getExecTestArgs(exec, output, errorOutput);
 			ProcessBuilder pb = new ProcessBuilder(args);
-			pb.directory(new File(tmpdir));
+			pb.directory(tmpdirFile);
 			Process process = pb.start();
 			StreamVacuum stdoutVacuum = new StreamVacuum(process.getInputStream());
 			StreamVacuum stderrVacuum = new StreamVacuum(process.getErrorStream());
@@ -500,14 +619,22 @@ public class BaseCSharpTest implements RuntimeTestSupport /*, SpecialRuntimeTest
 			process.waitFor();
 			stdoutVacuum.join();
 			stderrVacuum.join();
-			String output = stdoutVacuum.toString();
-			if ( output.length()==0 ) {
-				output = null;
+			String writtenOutput = TestOutputReading.read(output);
+			this.stderrDuringParse = TestOutputReading.read(errorOutput);
+			int exitValue = process.exitValue();
+			String stdoutString = stdoutVacuum.toString().trim();
+			String stderrString = stderrVacuum.toString().trim();
+			if (exitValue != 0) {
+				System.err.println("execTest command: " + Utils.join(args, " "));
+				System.err.println("execTest exitValue: " + exitValue);
 			}
-			if ( stderrVacuum.toString().length()>0 ) {
-				this.stderrDuringParse = stderrVacuum.toString();
+			if (!stdoutString.isEmpty()) {
+				System.err.println("execTest stdoutVacuum: " + stdoutString);
 			}
-			return output;
+			if (!stderrString.isEmpty()) {
+				System.err.println("execTest stderrVacuum: " + stderrString);
+			}
+			return writtenOutput;
 		}
 		catch (Exception e) {
 			System.err.println("can't exec recognizer");
@@ -516,12 +643,30 @@ public class BaseCSharpTest implements RuntimeTestSupport /*, SpecialRuntimeTest
 		return null;
 	}
 
-	private String[] getExecTestArgs(String exec) {
-		if(isWindows())
-			return new String[] { exec, new File(tmpdir, "input").getAbsolutePath() } ;
+	private String[] getExecTestArgs(String exec, Path output, Path errorOutput) {
+		if ( isWindows() ) {
+			return new String[]{
+				exec, new File(tmpdir, "input").getAbsolutePath(),
+				output.toAbsolutePath().toString(),
+				errorOutput.toAbsolutePath().toString()
+			};
+		}
 		else {
-			String mono = locateTool("mono");
-			return new String[] { mono, exec, new File(tmpdir, "input").getAbsolutePath() };
+			if (!NETSTANDARD) {
+				String mono = locateTool("mono");
+				return new String[] {
+					mono, exec, new File(tmpdir, "input").getAbsolutePath(),
+					output.toAbsolutePath().toString(),
+					errorOutput.toAbsolutePath().toString()
+				};
+			}
+
+			String dotnet = locateTool("dotnet");
+			return new String[] {
+				dotnet, exec, new File(tmpdir, "input").getAbsolutePath(),
+				output.toAbsolutePath().toString(),
+				errorOutput.toAbsolutePath().toString()
+			};
 		}
 	}
 
@@ -533,41 +678,6 @@ public class BaseCSharpTest implements RuntimeTestSupport /*, SpecialRuntimeTest
 		return filtered;
 	}
 
-
-	public static class StreamVacuum implements Runnable {
-		StringBuilder buf = new StringBuilder();
-		BufferedReader in;
-		Thread sucker;
-		public StreamVacuum(InputStream in) {
-			this.in = new BufferedReader( new InputStreamReader(in) );
-		}
-		public void start() {
-			sucker = new Thread(this);
-			sucker.start();
-		}
-		@Override
-		public void run() {
-			try {
-				String line = in.readLine();
-				while (line!=null) {
-					buf.append(line);
-					buf.append('\n');
-					line = in.readLine();
-				}
-			}
-			catch (IOException ioe) {
-				System.err.println("can't read output from process");
-			}
-		}
-		/** wait for the thread to finish */
-		public void join() throws InterruptedException {
-			sucker.join();
-		}
-		@Override
-		public String toString() {
-			return buf.toString();
-		}
-	}
 
 	protected void checkGrammarSemanticsError(ErrorQueue equeue,
 	                                          GrammarSemanticsMessage expectedMessage)
@@ -611,16 +721,6 @@ public class BaseCSharpTest implements RuntimeTestSupport /*, SpecialRuntimeTest
 		}
 	}
 
-	public static void writeFile(String dir, String fileName, String content) {
-		try {
-			Utils.writeFile(dir+"/"+fileName, content, "UTF-8");
-		}
-		catch (IOException ioe) {
-			System.err.println("can't write file");
-			ioe.printStackTrace(System.err);
-		}
-	}
-
 	protected void mkdir(String dir) {
 		File f = new File(dir);
 		f.mkdirs();
@@ -635,16 +735,23 @@ public class BaseCSharpTest implements RuntimeTestSupport /*, SpecialRuntimeTest
 			"using System;\n" +
 				"using Antlr4.Runtime;\n" +
 				"using Antlr4.Runtime.Tree;\n" +
+				"using System.IO;\n" +
+				"using System.Text;\n" +
 				"\n" +
 				"public class Test {\n" +
 				"    public static void Main(string[] args) {\n" +
-				"        ICharStream input = new AntlrFileStream(args[0]);\n" +
-				"        <lexerName> lex = new <lexerName>(input);\n" +
-				"        CommonTokenStream tokens = new CommonTokenStream(lex);\n" +
-				"        <createParser>\n"+
-				"		 parser.BuildParseTree = true;\n" +
-				"        ParserRuleContext tree = parser.<parserStartRuleName>();\n" +
-				"        ParseTreeWalker.Default.Walk(new TreeShapeListener(), tree);\n" +
+				"        var input = CharStreams.fromPath(args[0]);\n" +
+                "        using (FileStream fsOut = new FileStream(args[1], FileMode.Create, FileAccess.Write))\n" +
+                "        using (FileStream fsErr = new FileStream(args[2], FileMode.Create, FileAccess.Write))\n" +
+				"        using (TextWriter output = new StreamWriter(fsOut),\n" +
+				"                          errorOutput = new StreamWriter(fsErr)) {\n" +
+				"                <lexerName> lex = new <lexerName>(input, output, errorOutput);\n" +
+				"                CommonTokenStream tokens = new CommonTokenStream(lex);\n" +
+				"                <createParser>\n"+
+				"			 parser.BuildParseTree = true;\n" +
+				"                ParserRuleContext tree = parser.<parserStartRuleName>();\n" +
+				"                ParseTreeWalker.Default.Walk(new TreeShapeListener(), tree);\n" +
+				"        }\n" +
 				"    }\n" +
 				"}\n" +
 				"\n" +
@@ -663,11 +770,11 @@ public class BaseCSharpTest implements RuntimeTestSupport /*, SpecialRuntimeTest
 				"	}\n" +
 				"}"
 		);
-		ST createParserST = new ST("        <parserName> parser = new <parserName>(tokens);\n");
+		ST createParserST = new ST("        <parserName> parser = new <parserName>(tokens, output, errorOutput);\n");
 		if ( debug ) {
 			createParserST =
 				new ST(
-					"        <parserName> parser = new <parserName>(tokens);\n" +
+					"        <parserName> parser = new <parserName>(tokens, output, errorOutput);\n" +
 						"        parser.AddErrorListener(new DiagnosticErrorListener());\n");
 		}
 		outputFileST.add("createParser", createParserST);
@@ -681,17 +788,24 @@ public class BaseCSharpTest implements RuntimeTestSupport /*, SpecialRuntimeTest
 		ST outputFileST = new ST(
 			"using System;\n" +
 				"using Antlr4.Runtime;\n" +
+				"using System.IO;\n" +
+				"using System.Text;\n" +
 				"\n" +
 				"public class Test {\n" +
 				"    public static void Main(string[] args) {\n" +
-				"        ICharStream input = new AntlrFileStream(args[0]);\n" +
-				"        <lexerName> lex = new <lexerName>(input);\n" +
-				"        CommonTokenStream tokens = new CommonTokenStream(lex);\n" +
-				"        tokens.Fill();\n" +
-				"        foreach (object t in tokens.GetTokens())\n" +
-				"			Console.WriteLine(t);\n" +
-				(showDFA?"        Console.Write(lex.Interpreter.GetDFA(Lexer.DEFAULT_MODE).ToLexerString());\n":"")+
-				"    }\n" +
+				"        var input = CharStreams.fromPath(args[0]);\n" +
+                "        using (FileStream fsOut = new FileStream(args[1], FileMode.Create, FileAccess.Write))\n" +
+                "        using (FileStream fsErr = new FileStream(args[2], FileMode.Create, FileAccess.Write))\n" +
+				"        using (TextWriter output = new StreamWriter(fsOut),\n" +
+				"                          errorOutput = new StreamWriter(fsErr)) {\n" +
+					"        <lexerName> lex = new <lexerName>(input, output, errorOutput);\n" +
+					"        CommonTokenStream tokens = new CommonTokenStream(lex);\n" +
+					"        tokens.Fill();\n" +
+					"        foreach (object t in tokens.GetTokens())\n" +
+					"			output.WriteLine(t);\n" +
+					(showDFA?"        output.Write(lex.Interpreter.GetDFA(Lexer.DEFAULT_MODE).ToLexerString());\n":"")+
+					"    }\n" +
+					"}\n" +
 				"}"
 		);
 
@@ -726,25 +840,30 @@ public class BaseCSharpTest implements RuntimeTestSupport /*, SpecialRuntimeTest
 		}
 	}
 
-	protected void eraseFiles() {
-		if (tmpdir == null) {
-			return;
-		}
-
-		File tmpdirF = new File(tmpdir);
-		String[] files = tmpdirF.list();
-		if(files!=null) for(String file : files) {
-			new File(tmpdir+"/"+file).delete();
-		}
+	protected void eraseDirectory(File dir) {
+		File[] files = dir.listFiles();
+        if (files != null) {
+            for (File file : files) {
+                if (file.isDirectory()) {
+                    eraseDirectory(file);
+                }
+                else {
+                    file.delete();
+                }
+            }
+        }
+        dir.delete();
 	}
 
 	@Override
 	public void eraseTempDir() {
-		File tmpdirF = new File(tmpdir);
-		if ( tmpdirF.exists() ) {
-			eraseFiles();
-			tmpdirF.delete();
-		}
+        if (!PRESERVE_TEST_DIR) {
+            File tmpdirF = new File(tmpdir);
+            if ( tmpdirF.exists() ) {
+                eraseDirectory(tmpdirF);
+                tmpdirF.delete();
+            }
+        }
 	}
 
 	public String getFirstLineOfException() {

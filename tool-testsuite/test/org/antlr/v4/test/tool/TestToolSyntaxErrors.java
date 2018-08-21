@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2016 The ANTLR Project. All rights reserved.
+ * Copyright (c) 2012-2017 The ANTLR Project. All rights reserved.
  * Use of this file is governed by the BSD 3-clause license that
  * can be found in the LICENSE.txt file in the project root.
  */
@@ -8,6 +8,7 @@ package org.antlr.v4.test.tool;
 
 import org.antlr.v4.Tool;
 import org.antlr.v4.tool.ErrorType;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -58,6 +59,16 @@ public class TestToolSyntaxErrors extends BaseJavaToolTest {
 	@Override
 	public void testSetUp() throws Exception {
 		super.testSetUp();
+	}
+
+	@Test
+	public void AllErrorCodesDistinct() {
+		ErrorType[] errorTypes = ErrorType.class.getEnumConstants();
+		for (int i = 0; i < errorTypes.length; i++) {
+			for (int j = i + 1; j < errorTypes.length; j++) {
+				Assert.assertNotEquals(errorTypes[i].code, errorTypes[j].code);
+			}
+		}
 	}
 
 	@Test public void testA() { super.testErrors(A, true); }
@@ -258,11 +269,11 @@ public class TestToolSyntaxErrors extends BaseJavaToolTest {
 			"grammar A;\n" +
 			"tokens{Foo}\n" +
 			"b : Foo ;\n" +
-			"X : 'foo' -> popmode;\n" + // "meant" to use -> popMode
-			"Y : 'foo' -> token(Foo);", // "meant" to use -> type(Foo)
+			"X : 'foo1' -> popmode;\n" + // "meant" to use -> popMode
+			"Y : 'foo2' -> token(Foo);", // "meant" to use -> type(Foo)
 
-			"error(" + ErrorType.INVALID_LEXER_COMMAND.code + "): A.g4:4:13: lexer command popmode does not exist or is not supported by the current target\n" +
-			"error(" + ErrorType.INVALID_LEXER_COMMAND.code + "): A.g4:5:13: lexer command token does not exist or is not supported by the current target\n"
+			"error(" + ErrorType.INVALID_LEXER_COMMAND.code + "): A.g4:4:14: lexer command popmode does not exist or is not supported by the current target\n" +
+			"error(" + ErrorType.INVALID_LEXER_COMMAND.code + "): A.g4:5:14: lexer command token does not exist or is not supported by the current target\n"
 		};
 		super.testErrors(pair, true);
 	}
@@ -272,11 +283,11 @@ public class TestToolSyntaxErrors extends BaseJavaToolTest {
 			"grammar A;\n" +
 			"tokens{Foo}\n" +
 			"b : Foo ;\n" +
-			"X : 'foo' -> popMode(Foo);\n" + // "meant" to use -> popMode
-			"Y : 'foo' -> type;", // "meant" to use -> type(Foo)
+			"X : 'foo1' -> popMode(Foo);\n" + // "meant" to use -> popMode
+			"Y : 'foo2' -> type;", // "meant" to use -> type(Foo)
 
-			"error(" + ErrorType.UNWANTED_LEXER_COMMAND_ARGUMENT.code + "): A.g4:4:13: lexer command popMode does not take any arguments\n" +
-			"error(" + ErrorType.MISSING_LEXER_COMMAND_ARGUMENT.code + "): A.g4:5:13: missing argument for lexer command type\n"
+			"error(" + ErrorType.UNWANTED_LEXER_COMMAND_ARGUMENT.code + "): A.g4:4:14: lexer command popMode does not take any arguments\n" +
+			"error(" + ErrorType.MISSING_LEXER_COMMAND_ARGUMENT.code + "): A.g4:5:14: missing argument for lexer command type\n"
 		};
 		super.testErrors(pair, true);
 	}
@@ -433,13 +444,33 @@ public class TestToolSyntaxErrors extends BaseJavaToolTest {
 	}
 
 	/**
+	 * This is a regression test for https://github.com/antlr/antlr4/issues/1815
+	 * "Null ptr exception in SqlBase.g4"
+	 */
+	@Test public void testDoubleQuoteInTwoStringLiterals() {
+		String grammar =
+			"lexer grammar A;\n" +
+			"STRING : '\\\"' '\\\"' 'x' ;";
+		String expected =
+			"warning(" + ErrorType.INVALID_ESCAPE_SEQUENCE.code + "): A.g4:2:10: invalid escape sequence \\\"\n"+
+			"warning(" + ErrorType.INVALID_ESCAPE_SEQUENCE.code + "): A.g4:2:15: invalid escape sequence \\\"\n";
+
+		String[] pair = new String[] {
+			grammar,
+			expected
+		};
+
+		super.testErrors(pair, true);
+	}
+
+	/**
 	 * This test ensures that the {@link ErrorType#INVALID_ESCAPE_SEQUENCE}
 	 * error is not reported for escape sequences that are known to be valid.
 	 */
 	@Test public void testValidEscapeSequences() {
 		String grammar =
 			"lexer grammar A;\n" +
-			"NORMAL_ESCAPE : '\\b \\t \\n \\f \\r \\\" \\' \\\\';\n" +
+			"NORMAL_ESCAPE : '\\b \\t \\n \\f \\r \\' \\\\';\n" +
 			"UNICODE_ESCAPE : '\\u0001 \\u00A1 \\u00a1 \\uaaaa \\uAAAA';\n";
 		String expected =
 			"";
@@ -462,9 +493,10 @@ public class TestToolSyntaxErrors extends BaseJavaToolTest {
 			"lexer grammar A;\n" +
 			"RULE : 'Foo \\uAABG \\x \\u';\n";
 		String expected =
-			"error(" + ErrorType.INVALID_ESCAPE_SEQUENCE.code + "): A.g4:2:12: invalid escape sequence\n" +
-			"error(" + ErrorType.INVALID_ESCAPE_SEQUENCE.code + "): A.g4:2:19: invalid escape sequence\n" +
-			"error(" + ErrorType.INVALID_ESCAPE_SEQUENCE.code + "): A.g4:2:22: invalid escape sequence\n";
+			"warning(" + ErrorType.INVALID_ESCAPE_SEQUENCE.code + "): A.g4:2:12: invalid escape sequence \\uAABG\n" +
+			"warning(" + ErrorType.INVALID_ESCAPE_SEQUENCE.code + "): A.g4:2:19: invalid escape sequence \\x\n" +
+			"warning(" + ErrorType.INVALID_ESCAPE_SEQUENCE.code + "): A.g4:2:22: invalid escape sequence \\u\n" +
+			"warning("+ErrorType.EPSILON_TOKEN.code+"): A.g4:2:0: non-fragment lexer rule RULE can match the empty string\n";
 
 		String[] pair = new String[] {
 			grammar,
@@ -501,25 +533,70 @@ public class TestToolSyntaxErrors extends BaseJavaToolTest {
 		super.testErrors(pair, true);
 	}
 
-	@Test public void testInvalidCharSetAndRange() {
+	@Test public void testInvalidCharSetsAndStringLiterals() {
 		String grammar =
 				"lexer grammar Test;\n" +
-				"INVALID_RANGE:         'GH'..'LM';\n" +
-				"INVALID_RANGE_2:       'F'..'A' | 'Z';\n" +
-				"VALID_STRING_LITERALS: '\\u1234' | '\\t' | [\\-\\]];\n" +
-				"INVALID_CHAR_SET:      [f-az][];\n" +
-				"INVALID_CHAR_SET_2:    [\\u24\\uA2][\\u24];\n" +  //https://github.com/antlr/antlr4/issues/1077
-				"INVALID_CHAR_SET_3:    [\\t\\{];";
+				"INVALID_STRING_LITERAL:       '\\\"' | '\\]' | '\\u24';\n" +
+				"INVALID_STRING_LITERAL_RANGE: 'GH'..'LM';\n" +
+				"INVALID_CHAR_SET:             [\\u24\\uA2][\\{];\n" +  //https://github.com/antlr/antlr4/issues/1077
+				"EMPTY_STRING_LITERAL_RANGE:   'F'..'A' | 'Z';\n" +
+				"EMPTY_CHAR_SET:               [f-az][];\n" +
+				"START_HYPHEN_IN_CHAR_SET:     [-z];\n" +
+				"END_HYPHEN_IN_CHAR_SET:       [a-];\n" +
+				"SINGLE_HYPHEN_IN_CHAR_SET:    [-];\n" +
+				"VALID_STRING_LITERALS:        '\\u1234' | '\\t' | '\\'';\n" +
+				"VALID_CHAR_SET:               [`\\-=\\]];";
 
 		String expected =
-				"error(" + ErrorType.INVALID_LITERAL_IN_LEXER_SET.code + "): Test.g4:2:23: multi-character literals are not allowed in lexer sets: 'GH'\n" +
-				"error(" + ErrorType.INVALID_LITERAL_IN_LEXER_SET.code + "): Test.g4:2:29: multi-character literals are not allowed in lexer sets: 'LM'\n" +
-				"error(" + ErrorType.EMPTY_STRINGS_AND_SETS_NOT_ALLOWED.code + "): Test.g4:3:26: string literals and sets cannot be empty: 'F'..'A'\n" +
-				"error(" + ErrorType.EMPTY_STRINGS_AND_SETS_NOT_ALLOWED.code + "): Test.g4:5:23: string literals and sets cannot be empty: [f-a]\n" +
-				"error(" + ErrorType.EMPTY_STRINGS_AND_SETS_NOT_ALLOWED.code + "): Test.g4:5:29: string literals and sets cannot be empty: []\n" +
-				"error(" + ErrorType.INVALID_ESCAPE_SEQUENCE.code + "): Test.g4:6:23: invalid escape sequence\n" +
-				"error(" + ErrorType.INVALID_ESCAPE_SEQUENCE.code + "): Test.g4:6:33: invalid escape sequence\n" +
-				"error(" + ErrorType.INVALID_ESCAPE_SEQUENCE.code + "): Test.g4:7:23: invalid escape sequence\n";
+				"warning(" + ErrorType.INVALID_ESCAPE_SEQUENCE.code + "): Test.g4:2:31: invalid escape sequence \\\"\n" +
+				"warning(" + ErrorType.INVALID_ESCAPE_SEQUENCE.code + "): Test.g4:2:38: invalid escape sequence \\]\n" +
+				"warning(" + ErrorType.INVALID_ESCAPE_SEQUENCE.code + "): Test.g4:2:45: invalid escape sequence \\u24\n" +
+				"error(" + ErrorType.INVALID_LITERAL_IN_LEXER_SET.code + "): Test.g4:3:30: multi-character literals are not allowed in lexer sets: 'GH'\n" +
+				"error(" + ErrorType.INVALID_LITERAL_IN_LEXER_SET.code + "): Test.g4:3:36: multi-character literals are not allowed in lexer sets: 'LM'\n" +
+				"warning(" + ErrorType.INVALID_ESCAPE_SEQUENCE.code + "): Test.g4:4:30: invalid escape sequence \\u24\\u\n" +
+				"warning(" + ErrorType.INVALID_ESCAPE_SEQUENCE.code + "): Test.g4:4:40: invalid escape sequence \\{\n" +
+				"error(" + ErrorType.EMPTY_STRINGS_AND_SETS_NOT_ALLOWED.code + "): Test.g4:5:33: string literals and sets cannot be empty: 'F'..'A'\n" +
+				"error(" + ErrorType.EMPTY_STRINGS_AND_SETS_NOT_ALLOWED.code + "): Test.g4:6:30: string literals and sets cannot be empty: 'f'..'a'\n" +
+				"error(" + ErrorType.EMPTY_STRINGS_AND_SETS_NOT_ALLOWED.code + "): Test.g4:6:36: string literals and sets cannot be empty: []\n" +
+				"warning("+ ErrorType.EPSILON_TOKEN.code + "): Test.g4:2:0: non-fragment lexer rule INVALID_STRING_LITERAL can match the empty string\n";
+
+		String[] pair = new String[] {
+				grammar,
+				expected
+		};
+
+		super.testErrors(pair, true);
+	}
+
+	@Test public void testInvalidUnicodeEscapesInCharSet() {
+		String grammar =
+				"lexer grammar Test;\n" +
+				"INVALID_EXTENDED_UNICODE_EMPTY: [\\u{}];\n" +
+				"INVALID_EXTENDED_UNICODE_NOT_TERMINATED: [\\u{];\n" +
+				"INVALID_EXTENDED_UNICODE_TOO_LONG: [\\u{110000}];\n" +
+				"INVALID_UNICODE_PROPERTY_EMPTY: [\\p{}];\n" +
+				"INVALID_UNICODE_PROPERTY_NOT_TERMINATED: [\\p{];\n" +
+				"INVALID_INVERTED_UNICODE_PROPERTY_EMPTY: [\\P{}];\n" +
+				"INVALID_UNICODE_PROPERTY_UNKNOWN: [\\p{NotAProperty}];\n" +
+				"INVALID_INVERTED_UNICODE_PROPERTY_UNKNOWN: [\\P{NotAProperty}];\n" +
+				"UNICODE_PROPERTY_NOT_ALLOWED_IN_RANGE: [\\p{Uppercase_Letter}-\\p{Lowercase_Letter}];\n" +
+				"UNICODE_PROPERTY_NOT_ALLOWED_IN_RANGE_2: [\\p{Letter}-Z];\n" +
+				"UNICODE_PROPERTY_NOT_ALLOWED_IN_RANGE_3: [A-\\p{Number}];\n" +
+				"INVERTED_UNICODE_PROPERTY_NOT_ALLOWED_IN_RANGE: [\\P{Uppercase_Letter}-\\P{Number}];\n";
+
+		String expected =
+				"warning(" + ErrorType.INVALID_ESCAPE_SEQUENCE.code + "): Test.g4:2:32: invalid escape sequence \\u{}\n"+
+				"warning(" + ErrorType.INVALID_ESCAPE_SEQUENCE.code + "): Test.g4:3:41: invalid escape sequence \\u{\n"+
+				"warning(" + ErrorType.INVALID_ESCAPE_SEQUENCE.code + "): Test.g4:4:35: invalid escape sequence \\u{110\n"+
+				"warning(" + ErrorType.INVALID_ESCAPE_SEQUENCE.code + "): Test.g4:5:32: invalid escape sequence \\p{}\n"+
+				"warning(" + ErrorType.INVALID_ESCAPE_SEQUENCE.code + "): Test.g4:6:41: invalid escape sequence \\p{\n"+
+				"warning(" + ErrorType.INVALID_ESCAPE_SEQUENCE.code + "): Test.g4:7:41: invalid escape sequence \\P{}\n"+
+				"warning(" + ErrorType.INVALID_ESCAPE_SEQUENCE.code + "): Test.g4:8:34: invalid escape sequence \\p{NotAProperty}\n"+
+				"warning(" + ErrorType.INVALID_ESCAPE_SEQUENCE.code + "): Test.g4:9:43: invalid escape sequence \\P{NotAProperty}\n"+
+				"error(" + ErrorType.UNICODE_PROPERTY_NOT_ALLOWED_IN_RANGE.code + "): Test.g4:10:39: unicode property escapes not allowed in lexer charset range: [\\p{Uppercase_Letter}-\\p{Lowercase_Letter}]\n" +
+				"error(" + ErrorType.UNICODE_PROPERTY_NOT_ALLOWED_IN_RANGE.code + "): Test.g4:11:41: unicode property escapes not allowed in lexer charset range: [\\p{Letter}-Z]\n" +
+				"error(" + ErrorType.UNICODE_PROPERTY_NOT_ALLOWED_IN_RANGE.code + "): Test.g4:12:41: unicode property escapes not allowed in lexer charset range: [A-\\p{Number}]\n" +
+				"error(" + ErrorType.UNICODE_PROPERTY_NOT_ALLOWED_IN_RANGE.code + "): Test.g4:13:48: unicode property escapes not allowed in lexer charset range: [\\P{Uppercase_Letter}-\\P{Number}]\n";
 
 		String[] pair = new String[] {
 				grammar,
@@ -727,6 +804,22 @@ public class TestToolSyntaxErrors extends BaseJavaToolTest {
 			"error(" + ErrorType.CONSTANT_VALUE_IS_NOT_A_RECOGNIZED_CHANNEL_NAME.code + "): T.g4:10:34: NEWLINE_CHANNEL is not a recognized channel name\n";
 
 		String[] pair = { grammar, expected };
+		super.testErrors(pair, true);
+	}
+
+	// Test for https://github.com/antlr/antlr4/issues/1556
+	@Test public void testRangeInParserGrammar() {
+		String grammar =
+			"grammar T;\n"+
+			"a:  'A'..'Z' ;\n";
+		String expected =
+			"error(" + ErrorType.TOKEN_RANGE_IN_PARSER.code + "): T.g4:2:4: token ranges not allowed in parser: 'A'..'Z'\n";
+
+		String[] pair = new String[] {
+			grammar,
+			expected
+		};
+
 		super.testErrors(pair, true);
 	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2016 The ANTLR Project. All rights reserved.
+ * Copyright (c) 2012-2017 The ANTLR Project. All rights reserved.
  * Use of this file is governed by the BSD 3-clause license that
  * can be found in the LICENSE.txt file in the project root.
  */
@@ -150,6 +150,13 @@ public class Antlr4Mojo extends AbstractMojo {
     @Parameter(property = "project", required = true, readonly = true)
     protected MavenProject project;
 
+	/**
+	 * Specifies whether sources are added to the {@code compile} or
+	 * {@code test} scope.
+	 */
+	@Parameter(property = "antlr4.generateTestSources", defaultValue = "false")
+	private boolean generateTestSources;
+
     /**
      * The directory where the ANTLR grammar files ({@code *.g4}) are located.
      */
@@ -190,7 +197,12 @@ public class Antlr4Mojo extends AbstractMojo {
     }
 
     void addSourceRoot(File outputDir) {
-        project.addCompileSourceRoot(outputDir.getPath());
+		if (generateTestSources) {
+			project.addTestCompileSourceRoot(outputDir.getPath());
+		}
+		else {
+			project.addCompileSourceRoot(outputDir.getPath());
+		}
     }
 
     /**
@@ -383,7 +395,7 @@ public class Antlr4Mojo extends AbstractMojo {
             String tokensFileName = grammarFile.getName().split("\\.")[0] + ".tokens";
             File outputFile = new File(outputDirectory, tokensFileName);
             if ( (! outputFile.exists()) ||
-                 outputFile.lastModified() < grammarFile.lastModified() ||
+                 outputFile.lastModified() <= grammarFile.lastModified() ||
                  dependencies.isDependencyChanged(grammarFile)) {
                 grammarFilesToProcess.add(grammarFile);
             }
@@ -400,10 +412,7 @@ public class Antlr4Mojo extends AbstractMojo {
 		// Iterate each grammar file we were given and add it into the tool's list of
 		// grammars to process.
 		for (File grammarFile : grammarFiles) {
-			if (!buildContext.hasDelta(grammarFile)) {
-				continue;
-			}
-
+			buildContext.refresh(grammarFile);
 			buildContext.removeMessages(grammarFile);
 
 			getLog().debug("Grammar file '" + grammarFile.getPath() + "' detected.");

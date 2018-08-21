@@ -1,7 +1,6 @@
-/* Copyright (c) 2012-2016 The ANTLR Project. All rights reserved.
- * Use of this file is governed by the BSD 3-clause license that
- * can be found in the LICENSE.txt file in the project root.
- */
+// Copyright (c) 2012-2017 The ANTLR Project. All rights reserved.
+// Use of this file is governed by the BSD 3-clause license that
+// can be found in the LICENSE.txt file in the project root.
 
 package antlr
 
@@ -20,13 +19,19 @@ type FileStream struct {
 	filename string
 }
 
-func NewFileStream(fileName string) *FileStream {
+func NewFileStream(fileName string) (*FileStream, error) {
 
 	buf := bytes.NewBuffer(nil)
 
-	f, _ := os.Open(fileName) // Error handling elided for brevity.
-	io.Copy(buf, f)           // Error handling elided for brevity.
-	f.Close()
+	f, err := os.Open(fileName)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	_, err = io.Copy(buf, f)
+	if err != nil {
+		return nil, err
+	}
 
 	fs := new(FileStream)
 
@@ -35,7 +40,7 @@ func NewFileStream(fileName string) *FileStream {
 
 	fs.InputStream = NewInputStream(s)
 
-	return fs
+	return fs, nil
 
 }
 

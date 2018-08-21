@@ -1,4 +1,4 @@
-﻿/* Copyright (c) 2012-2016 The ANTLR Project. All rights reserved.
+﻿/* Copyright (c) 2012-2017 The ANTLR Project. All rights reserved.
  * Use of this file is governed by the BSD 3-clause license that
  * can be found in the LICENSE.txt file in the project root.
  */
@@ -28,7 +28,9 @@ namespace atn {
 
     struct Comparer {
       bool operator()(Ref<SemanticContext> const& lhs, Ref<SemanticContext> const& rhs) const {
-        return *lhs == *rhs;
+        if (lhs == rhs)
+          return true;
+        return (lhs->hashCode() == rhs->hashCode()) && (*lhs == *rhs);
       }
     };
 
@@ -41,7 +43,7 @@ namespace atn {
      */
     static const Ref<SemanticContext> NONE;
 
-    virtual ~SemanticContext() {};
+    virtual ~SemanticContext();
 
     virtual size_t hashCode() const = 0;
     virtual std::string toString() const = 0;
@@ -142,6 +144,8 @@ namespace atn {
    */
   class ANTLR4CPP_PUBLIC SemanticContext::Operator : public SemanticContext {
   public:
+    virtual ~Operator() override;
+
     /**
      * Gets the operands for the semantic context operator.
      *

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2016 The ANTLR Project. All rights reserved.
+ * Copyright (c) 2012-2017 The ANTLR Project. All rights reserved.
  * Use of this file is governed by the BSD 3-clause license that
  * can be found in the LICENSE.txt file in the project root.
  */
@@ -240,8 +240,30 @@ public class ParserExecDescriptors {
 
 	}
 
+	/** Match assignments, ignore other tokens with wildcard. */
+	public static class Wildcard extends BaseParserTestDescriptor {
+		public String input = "x=10; abc;;;; y=99;";
+		public String output = "x=10;\ny=99;\n";
+		public String errors = null;
+		public String startRule = "a";
+		public String grammarName = "T";
+
+		/**
+		grammar T;
+		a : (assign|.)+ EOF ;
+		assign : ID '=' INT ';' {
+		<writeln("$text")>
+		} ;
+		ID : 'a'..'z'+ ;
+		INT : '0'..'9'+;
+		WS : (' '|'\n') -> skip;
+		*/
+		@CommentHasStringValue
+		public String grammar;
+	}
+
 	/**
-	 * This test ensures that {@link ParserATNSimulator} does not produce a
+	 * This test ensures that {@link org.antlr.v4.runtime.atn.ParserATNSimulator} does not produce a
 	 * {@link StackOverflowError} when it encounters an {@code EOF} transition
 	 * inside a closure.
 	 */
@@ -753,6 +775,118 @@ public class ParserExecDescriptors {
 		 */
 		@CommentHasStringValue
 		public String grammar;
+	}
 
+	/**
+	 * This is a regression test for antlr/antlr4#1545, case 1.
+	 */
+	public static class OpenDeviceStatement_Case1 extends BaseParserTestDescriptor {
+		public String input = "OPEN DEVICE DEVICE";
+		public String output = "OPEN DEVICE DEVICE\n";
+		public String errors = null;
+		public String startRule = "statement";
+		public String grammarName = "OpenDeviceStatement";
+
+		/**
+		 grammar OpenDeviceStatement;
+		 program : statement+ '.' ;
+
+		 statement : 'OPEN' ( 'DEVICE' (  OPT1  |  OPT2  |  OPT3  )? )+ {<writeln("$text")>} ;
+
+		 OPT1 : 'OPT-1';
+		 OPT2 : 'OPT-2';
+		 OPT3 : 'OPT-3';
+
+		 WS : (' '|'\n')+ -> channel(HIDDEN);
+		 */
+		@CommentHasStringValue
+		public String grammar;
+	}
+
+	/**
+	 * This is a regression test for antlr/antlr4#1545, case 2.
+	 */
+	public static class OpenDeviceStatement_Case2 extends BaseParserTestDescriptor {
+		public String input = "OPEN DEVICE DEVICE";
+		public String output = "OPEN DEVICE DEVICE\n";
+		public String errors = null;
+		public String startRule = "statement";
+		public String grammarName = "OpenDeviceStatement";
+
+		/**
+		 grammar OpenDeviceStatement;
+		 program : statement+ '.' ;
+
+		 statement : 'OPEN' ( 'DEVICE' (  (OPT1)  |  OPT2  |  OPT3  )? )+ {<writeln("$text")>} ;
+
+		 OPT1 : 'OPT-1';
+		 OPT2 : 'OPT-2';
+		 OPT3 : 'OPT-3';
+
+		 WS : (' '|'\n')+ -> channel(HIDDEN);
+		 */
+		@CommentHasStringValue
+		public String grammar;
+	}
+
+	/**
+	 * This is a regression test for antlr/antlr4#1545, case 3.
+	 */
+	public static class OpenDeviceStatement_Case3 extends BaseParserTestDescriptor {
+		public String input = "OPEN DEVICE DEVICE.";
+		public String output = "OPEN DEVICE DEVICE\n";
+		public String errors = null;
+		public String startRule = "statement";
+		public String grammarName = "OpenDeviceStatement";
+
+		/**
+		 grammar OpenDeviceStatement;
+		 program : statement+ '.' ;
+
+		 statement : 'OPEN' ( 'DEVICE' (  (OPT1)  |  OPT2  |  OPT3  )? )+ {<writeln("$text")>} ;
+
+		 OPT1 : 'OPT-1';
+		 OPT2 : 'OPT-2';
+		 OPT3 : 'OPT-3';
+
+		 WS : (' '|'\n')+ -> channel(HIDDEN);
+		 */
+		@CommentHasStringValue
+		public String grammar;
+	}
+
+	/**
+	 * This is a regression test for antlr/antlr4#2301.
+	 */
+	public static class OrderingPredicates extends BaseParserTestDescriptor {
+		public String input = "POINT AT X";
+		public String output = null;
+		public String errors = null;
+		public String startRule = "expr";
+		public String grammarName = "Issue2301";
+
+		/**
+		 grammar Issue2301;
+
+		 SPACES: [ \t\r\n]+ -> skip;
+
+		 AT: 'AT';
+		 X : 'X';
+		 Y : 'Y';
+
+		 ID: [A-Z]+;
+
+		 constant
+		 : 'DUMMY'
+		 ;
+
+		 expr
+		 : ID constant?
+		 | expr AT X
+		 | expr AT Y
+		 ;
+		 */
+		@CommentHasStringValue
+		public String grammar;
 	}
 }

@@ -51,6 +51,8 @@ ParserFile(file, parser, namedActions, contextSuperClass) ::= <<
 # encoding: utf-8
 from antlr4 import *
 from io import StringIO
+from typing.io import TextIO
+import sys
 
 <namedActions.header>
 <parser>
@@ -174,16 +176,16 @@ class <parser.name> ( <if(superClass)><superClass><else>Parser<endif> ):
 dumpActions(recog, argFuncs, actionFuncs, sempredFuncs) ::= <<
 <if(actionFuncs)>
 def action(self, localctx:RuleContext, ruleIndex:int, actionIndex:int):
-	if self._actions is None:
-		actions = dict()
+    if self._actions is None:
+        actions = dict()
 <recog.actionFuncs.values:{f|
-		actions[<f.ruleIndex>] = self.<f.name>_action }; separator="\n">
-		self._actions = actions
-	action = self._actions.get(ruleIndex, None)
-	if action is not None:
-		action(localctx, actionIndex)
-	else:
-		raise Exception("No registered action for:" + str(ruleIndex))
+        actions[<f.ruleIndex>] = self.<f.name>_action }; separator="\n">
+        self._actions = actions
+    action = self._actions.get(ruleIndex, None)
+    if action is not None:
+        action(localctx, actionIndex)
+    else:
+        raise Exception("No registered action for:" + str(ruleIndex))
 
 <actionFuncs.values; separator="\n">
 
@@ -206,8 +208,8 @@ def sempred(self, localctx:RuleContext, ruleIndex:int, predIndex:int):
 >>
 
 parser_ctor(p) ::= <<
-def __init__(self, input:TokenStream):
-    super().__init__(input)
+def __init__(self, input:TokenStream, output:TextIO = sys.stdout):
+    super().__init__(input, output)
     self.checkVersion("<file.ANTLRVersion>")
     self._interp = ParserATNSimulator(self, self.atn, self.decisionsToDFA, self.sharedContextCache)
     self._predicates = None
@@ -342,7 +344,7 @@ token = self._input.LA(1)
     <alt>
     pass}; separator="\nel">
 else:
-    <error>
+    pass
 >>
 
 LL1OptionalBlockSingleAlt(choice, expr, alts, preamble, error, followExpr) ::= <<
@@ -525,7 +527,7 @@ if not <chunks>:
 
 ExceptionClause(e, catchArg, catchAction) ::= <<
 catch (<catchArg>) {
-	<catchAction>
+    <catchAction>
 }
 >>
 
@@ -630,7 +632,7 @@ def <r.name>(self, i:int=None):
 LexerRuleContext() ::= "RuleContext"
 
 /** The rule context name is the rule followed by a suffix; e.g.,
- *	r becomes rContext.
+ *  r becomes rContext.
  */
 RuleContextNameSuffix() ::= "Context"
 
@@ -745,6 +747,8 @@ LexerFile(lexerFile, lexer, namedActions) ::= <<
 <fileHeader(lexerFile.grammarFileName, lexerFile.ANTLRVersion)>
 from antlr4 import *
 from io import StringIO
+from typing.io import TextIO
+import sys
 
 <namedActions.header>
 
@@ -761,9 +765,17 @@ class <lexer.name>(<if(superClass)><superClass><else>Lexer<endif>):
 
     decisionsToDFA = [ DFA(ds, i) for i, ds in enumerate(atn.decisionToState) ]
 
+<if(lexer.channels)>
+    <lexer.channels:{c| <c> = <lexer.channels.(c)>}; separator="\n">
+
+<endif>
+<if(rest(lexer.modes))>
     <rest(lexer.modes):{m| <m> = <i>}; separator="\n">
 
+<endif>
     <lexer.tokens:{k | <k> = <lexer.tokens.(k)>}; separator="\n", wrap, anchor>
+
+    channelNames = [ u"DEFAULT_TOKEN_CHANNEL", u"HIDDEN"<if (lexer.channels)>, <lexer.channels:{c| u"<c>"}; separator=", ", wrap, anchor><endif> ]
 
     modeNames = [ <lexer.modes:{m| "<m>"}; separator=", ", wrap, anchor> ]
 
@@ -777,8 +789,8 @@ class <lexer.name>(<if(superClass)><superClass><else>Lexer<endif>):
 
     grammarFileName = "<lexer.grammarFileName>"
 
-    def __init__(self, input=None):
-        super().__init__(input)
+    def __init__(self, input=None, output:TextIO = sys.stdout):
+        super().__init__(input, output)
         self.checkVersion("<lexerFile.ANTLRVersion>")
         self._interp = LexerATNSimulator(self, self.atn, self.decisionsToDFA, PredictionContextCache())
         self._actions = None
@@ -801,10 +813,10 @@ def serializedATN():
 >>
 
 /** Using a type to init value map, try to init a type; if not in table
- *	must be an object, default value is "null".
+ *  must be an object, default value is "null".
  */
 initValue(typeName) ::= <<
-<javaTypeInitMap.(typeName)>
+<pythonTypeInitMap.(typeName)>
 >>
 
 codeFileExtension() ::= ".py"

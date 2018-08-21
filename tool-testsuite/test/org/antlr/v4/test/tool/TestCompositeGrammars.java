@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2016 The ANTLR Project. All rights reserved.
+ * Copyright (c) 2012-2017 The ANTLR Project. All rights reserved.
  * Use of this file is governed by the BSD 3-clause license that
  * can be found in the LICENSE.txt file in the project root.
  */
@@ -17,6 +17,7 @@ import org.junit.Test;
 
 import java.io.File;
 
+import static org.antlr.v4.test.runtime.BaseRuntimeTest.writeFile;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 
@@ -59,6 +60,181 @@ public class TestCompositeGrammars extends BaseJavaToolTest {
 		ErrorQueue equeue = BaseRuntimeTest.antlrOnString(tmpdir, "Java", "M.g4", false, "-lib", tmpdir);
 		assertEquals(0, equeue.size());
 	}
+
+	@Test public void testImportIntoLexerGrammar() throws Exception {
+		BaseRuntimeTest.mkdir(tmpdir);
+
+		String master =
+			"lexer grammar M;\n" +
+			"import S;\n" +
+			"A : 'a';\n" +
+			"B : 'b';\n";
+		writeFile(tmpdir, "M.g4", master);
+
+		String slave = 
+		    "lexer grammar S;\n" +
+			"C : 'c';\n";
+		writeFile(tmpdir, "S.g4", slave);
+
+		ErrorQueue equeue = BaseRuntimeTest.antlrOnString(tmpdir, "Java", "M.g4", false, "-lib", tmpdir);
+		assertEquals(0, equeue.errors.size());
+	}
+
+	@Test public void testImportModesIntoLexerGrammar() throws Exception {
+		BaseRuntimeTest.mkdir(tmpdir);
+
+		String master =
+			"lexer grammar M;\n" +
+			"import S;\n" +
+			"A : 'a' -> pushMode(X);\n" +
+			"B : 'b';\n";
+		writeFile(tmpdir, "M.g4", master);
+
+		String slave = 
+			"lexer grammar S;\n" +
+			"D : 'd';\n" +
+			"mode X;\n" +
+			"C : 'c' -> popMode;\n";
+		writeFile(tmpdir, "S.g4", slave);
+
+		ErrorQueue equeue = BaseRuntimeTest.antlrOnString(tmpdir, "Java", "M.g4", false, "-lib", tmpdir);
+		assertEquals(0, equeue.errors.size());
+	}
+	
+	@Test public void testImportChannelsIntoLexerGrammar() throws Exception {
+		BaseRuntimeTest.mkdir(tmpdir);
+
+		String master =
+			"lexer grammar M;\n" +
+			"import S;\n" +
+			"channels {CH_A, CH_B}\n" +
+			"A : 'a' -> channel(CH_A);\n" +
+			"B : 'b' -> channel(CH_B);\n";
+		writeFile(tmpdir, "M.g4", master);
+
+		String slave = 
+			"lexer grammar S;\n" +
+			"C : 'c';\n";
+		writeFile(tmpdir, "S.g4", slave);
+
+		ErrorQueue equeue = BaseRuntimeTest.antlrOnString(tmpdir, "Java", "M.g4", false, "-lib", tmpdir);
+		assertEquals(0, equeue.errors.size());
+	}
+	
+	@Test public void testImportMixedChannelsIntoLexerGrammar() throws Exception {
+		BaseRuntimeTest.mkdir(tmpdir);
+
+		String master =
+			"lexer grammar M;\n" +
+			"import S;\n" +
+			"channels {CH_A, CH_B}\n" +
+			"A : 'a' -> channel(CH_A);\n" +
+			"B : 'b' -> channel(CH_B);\n";
+		writeFile(tmpdir, "M.g4", master);
+
+		String slave = 
+			"lexer grammar S;\n" +
+			"channels {CH_C}\n" +
+			"C : 'c' -> channel(CH_C);\n";
+		writeFile(tmpdir, "S.g4", slave);
+
+		ErrorQueue equeue = BaseRuntimeTest.antlrOnString(tmpdir, "Java", "M.g4", false, "-lib", tmpdir);
+		assertEquals(0, equeue.errors.size());
+	}
+
+	@Test public void testImportClashingChannelsIntoLexerGrammar() throws Exception {
+		BaseRuntimeTest.mkdir(tmpdir);
+
+		String master =
+			"lexer grammar M;\n" +
+			"import S;\n" +
+			"channels {CH_A, CH_B, CH_C}\n" +
+			"A : 'a' -> channel(CH_A);\n" +
+			"B : 'b' -> channel(CH_B);\n" +
+			"C : 'C' -> channel(CH_C);\n";
+		writeFile(tmpdir, "M.g4", master);
+
+		String slave = 
+			"lexer grammar S;\n" +
+			"channels {CH_C}\n" +
+			"C : 'c' -> channel(CH_C);\n";
+		writeFile(tmpdir, "S.g4", slave);
+
+		ErrorQueue equeue = BaseRuntimeTest.antlrOnString(tmpdir, "Java", "M.g4", false, "-lib", tmpdir);
+		assertEquals(0, equeue.errors.size());
+	}	
+	
+	@Test public void testMergeModesIntoLexerGrammar() throws Exception {
+		BaseRuntimeTest.mkdir(tmpdir);
+
+		String master =
+			"lexer grammar M;\n" +
+			"import S;\n" +
+			"A : 'a' -> pushMode(X);\n" +
+			"mode X;\n" +
+			"B : 'b';\n";
+		writeFile(tmpdir, "M.g4", master);
+
+		String slave = 
+			"lexer grammar S;\n" +
+			"D : 'd';\n" +
+			"mode X;\n" +
+			"C : 'c' -> popMode;\n";
+		writeFile(tmpdir, "S.g4", slave);
+
+		ErrorQueue equeue = BaseRuntimeTest.antlrOnString(tmpdir, "Java", "M.g4", false, "-lib", tmpdir);
+		assertEquals(0, equeue.errors.size());
+	}
+	
+	@Test public void testEmptyModesInLexerGrammar() throws Exception {
+		BaseRuntimeTest.mkdir(tmpdir);
+
+		String master =
+			"lexer grammar M;\n" +
+			"import S;\n" +
+			"A : 'a';\n" +
+			"C : 'e';\n" + 
+			"B : 'b';\n";
+		writeFile(tmpdir, "M.g4", master);
+
+		String slave = 
+			"lexer grammar S;\n" +
+			"D : 'd';\n" +
+			"mode X;\n" +
+			"C : 'c' -> popMode;\n";
+		writeFile(tmpdir, "S.g4", slave);
+
+		ErrorQueue equeue = BaseRuntimeTest.antlrOnString(tmpdir, "Java", "M.g4", false, "-lib", tmpdir);
+		assertEquals(0, equeue.errors.size());
+	}
+	
+	@Test public void testCombinedGrammarImportsModalLexerGrammar() throws Exception {
+		BaseRuntimeTest.mkdir(tmpdir);
+
+		String master =
+			"grammar M;\n" +
+			"import S;\n" +
+			"A : 'a';\n" +
+			"B : 'b';\n" +
+			"r : A B;\n";
+		writeFile(tmpdir, "M.g4", master);
+
+		String slave = 
+			"lexer grammar S;\n" +
+			"D : 'd';\n" +
+			"mode X;\n" +
+			"C : 'c' -> popMode;\n";
+		writeFile(tmpdir, "S.g4", slave);
+
+		ErrorQueue equeue = BaseRuntimeTest.antlrOnString(tmpdir, "Java", "M.g4", false, "-lib", tmpdir);
+		assertEquals(1, equeue.errors.size());
+		ANTLRMessage msg = equeue.errors.get(0);
+		assertEquals(ErrorType.MODE_NOT_IN_LEXER, msg.getErrorType());
+		assertEquals("X", msg.getArgs()[0]);
+		assertEquals(3, msg.line);
+		assertEquals(5, msg.charPosition);
+		assertEquals("M.g4", new File(msg.fileName).getName());
+	}	
 
 	@Test public void testDelegatesSeeSameTokenType() throws Exception {
 		String slaveS =
@@ -460,7 +636,7 @@ public class TestCompositeGrammars extends BaseJavaToolTest {
 		BaseRuntimeTest.mkdir(tmpdir);
 		writeFile(tmpdir, "Java.g4", slave);
 		String found = execParser("NewJava.g4", master, "NewJavaParser", "NewJavaLexer",
-		                          null, null, "compilationUnit", "package Foo;", debug);
+					  null, null, "compilationUnit", "package Foo;", debug);
 		assertEquals(null, found);
 		assertNull(stderrDuringParse);
 	}
@@ -488,7 +664,7 @@ public class TestCompositeGrammars extends BaseJavaToolTest {
 		BaseRuntimeTest.mkdir(tmpdir);
 		writeFile(tmpdir, "Java.g4", slave);
 		String found = execParser("T.g4", master, "TParser", "TLexer",
-		                          null, null, "s", "a=b", debug);
+					  null, null, "s", "a=b", debug);
 		assertEquals(null, found);
 		assertNull(stderrDuringParse);
 	}
